@@ -651,4 +651,7 @@
     <plurals name="call">
         <item quantity="one">1 telefon</item>
     </plurals>
+
+    <string name="menu_add_to_blacklist">Dodaj do czarnej listy</string>
+    <string name="toast_added_to_blacklist">Dodano %s do czarnej listy.</string>
 </resources>
