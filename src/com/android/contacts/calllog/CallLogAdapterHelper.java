@@ -198,9 +198,6 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
     private ExpirableCache<NumberWithCountryIso, ContactInfo> mContactInfoCache;
 
     private QueryThread mCallerIdThread;
-
-    private static boolean sShouldProcess = false;
-
     /** Can be set to true by tests to disable processing of requests. */
     private volatile boolean mRequestProcessingDisabled = false;
 
@@ -215,7 +212,7 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
      */
     private final LinkedList<ContactInfoRequest> mRequests;
 
-    private ViewTreeObserver mViewTreeObserver = null;
+    private View mOnPreDrawObservedView = null;
 
     private Handler mHandler = new Handler() {
         @Override
@@ -250,7 +247,6 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
                 mRequests.notifyAll();
             }
         }
-        sShouldProcess = true;
         if (immediate) startRequestProcessing();
     }
 
@@ -261,7 +257,7 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
 
         // Only schedule a thread-creation message if the thread hasn't been
         // created yet. This is purely an optimization, to queue fewer messages.
-        if (mCallerIdThread == null && sShouldProcess) {
+        if (mCallerIdThread == null) {
             mHandler.sendEmptyMessageDelayed(START_THREAD, START_PROCESSING_REQUESTS_DELAY_MILLIS);
         }
 
@@ -270,9 +266,9 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
 
     public void registerOnPreDrawListener(View v) {
         // Listen for the first draw
-        if (mViewTreeObserver == null) {
-            mViewTreeObserver = v.getViewTreeObserver();
-            mViewTreeObserver.addOnPreDrawListener(this);
+        if (mOnPreDrawObservedView == null) {
+            mOnPreDrawObservedView = v;
+            v.getViewTreeObserver().addOnPreDrawListener(this);
         }
     }
 
@@ -280,10 +276,10 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
      * Stop receiving onPreDraw() notifications.
      */
     private void unregisterPreDrawListener() {
-        if (mViewTreeObserver != null && mViewTreeObserver.isAlive()) {
-            mViewTreeObserver.removeOnPreDrawListener(this);
+        if (mOnPreDrawObservedView != null) {
+            mOnPreDrawObservedView.getViewTreeObserver().removeOnPreDrawListener(this);
+            mOnPreDrawObservedView = null;
         }
-        mViewTreeObserver = null;
     }
 
     public void invalidateCache() {
@@ -308,7 +304,6 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
         mCallerIdThread = new QueryThread();
         mCallerIdThread.setPriority(Thread.MIN_PRIORITY);
         mCallerIdThread.start();
-        sShouldProcess = true;
     }
 
     /**
@@ -323,7 +318,6 @@ public class CallLogAdapterHelper implements ViewTreeObserver.OnPreDrawListener 
             mCallerIdThread.stopProcessing();
             mCallerIdThread.interrupt();
             mCallerIdThread = null;
-            sShouldProcess = false;
         }
     }
 

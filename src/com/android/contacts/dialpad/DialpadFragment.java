@@ -32,10 +32,6 @@ import android.content.res.Resources;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.hardware.SensorEventListener;
-import android.hardware.Sensor;
-import android.hardware.SensorEvent;
-import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
@@ -49,7 +45,6 @@ import android.provider.Contacts.Intents.Insert;
 import android.provider.Contacts.People;
 import android.provider.Contacts.Phones;
 import android.provider.Contacts.PhonesColumns;
-import android.provider.ContactsContract.Contacts;
 import android.provider.Settings;
 import android.telephony.PhoneNumberUtils;
 import android.telephony.PhoneStateListener;
@@ -93,7 +88,6 @@ import com.android.contacts.activities.DialtactsActivity;
 import com.android.contacts.dialpad.T9SearchCache.ContactItem;
 import com.android.contacts.dialpad.T9SearchCache.T9Adapter;
 import com.android.contacts.dialpad.T9SearchCache.T9SearchResult;
-import com.android.contacts.preference.DialpadPreferenceActivity;
 import com.android.contacts.util.Constants;
 import com.android.contacts.util.PhoneNumberFormatter;
 import com.android.contacts.util.StopWatch;
@@ -105,10 +99,9 @@ import com.android.phone.HapticFeedback;
  * Fragment that displays a twelve-key phone dialpad.
  */
 public class DialpadFragment extends Fragment
-        implements View.OnClickListener, View.OnLongClickListener,
-        View.OnKeyListener, AdapterView.OnItemClickListener,
-        AdapterView.OnItemLongClickListener, TextWatcher,
-        SensorEventListener,
+        implements View.OnClickListener,
+        View.OnLongClickListener, View.OnKeyListener,
+        AdapterView.OnItemClickListener, TextWatcher,
         PopupMenu.OnMenuItemClickListener,
         DialpadImageButton.OnPressedListener {
     private static final String TAG = DialpadFragment.class.getSimpleName();
@@ -169,13 +162,6 @@ public class DialpadFragment extends Fragment
     private T9Adapter mT9AdapterTop;
     private ViewSwitcher mT9Flipper;
     private LinearLayout mT9Top;
-
-    private SensorManager mSensorManager;
-    private int SensorOrientationY;
-    private int SensorProximity;
-    private int oldProximity;
-    private boolean initProx;
-    private boolean proxChanged;
 
     /**
      * Regular expression prohibiting manual phone call. Can be empty, which means "no rule".
@@ -313,56 +299,6 @@ public class DialpadFragment extends Fragment
     }
 
     @Override
-    public void onSensorChanged(SensorEvent event) {
-
-        switch (event.sensor.getType()) {
-            case Sensor.TYPE_ORIENTATION:
-                SensorOrientationY = (int) event.values[SensorManager.DATA_Y];
-                break;
-            case Sensor.TYPE_PROXIMITY:
-                int currentProx = (int) event.values[0];
-                if (initProx) {
-                    SensorProximity = currentProx;
-                    initProx = false;
-                } else {
-                    if( SensorProximity > 0 && currentProx == 0){
-                        proxChanged = true;
-                    }
-                }
-                SensorProximity = currentProx;
-                break;
-        }
-        if (rightOrientation(SensorOrientationY) && SensorProximity == 0 && proxChanged ) {
-            if (!isDigitsEmpty()) {
-                mSensorManager.unregisterListener(this, mSensorManager
-                    .getDefaultSensor(Sensor.TYPE_ORIENTATION));
-                mSensorManager.unregisterListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY));
-                final String number = mDigits.getText().toString();
-                Intent intent = new Intent(Intent.ACTION_CALL_PRIVILEGED);
-                intent = ContactsUtils.getCallIntent(number,
-                    (getActivity() instanceof DialtactsActivity ?
-                    ((DialtactsActivity)getActivity()).getCallOrigin() : null));
-                startActivity(intent);
-                mClearDigitsOnStop = true;
-                getActivity().finish();
-            }
-        }
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
-    }
-
-    public boolean rightOrientation(int orientation) {
-        if (orientation < -50 && orientation > -130) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedState) {
         View fragmentView = inflater.inflate(R.layout.dialpad_fragment, container, false);
 
@@ -381,12 +317,10 @@ public class DialpadFragment extends Fragment
         mT9List = (ListView) fragmentView.findViewById(R.id.t9list);
         if (mT9List != null) {
             mT9List.setOnItemClickListener(this);
-            mT9List.setOnItemLongClickListener(this);
         }
         mT9ListTop = (ListView) fragmentView.findViewById(R.id.t9listtop);
         if (mT9ListTop != null) {
             mT9ListTop.setOnItemClickListener(this);
-            mT9ListTop.setOnItemLongClickListener(this);
             mT9ListTop.setTag(new ContactItem());
         }
         mT9Toggle = (ToggleButton) fragmentView.findViewById(R.id.t9toggle);
@@ -395,6 +329,7 @@ public class DialpadFragment extends Fragment
         }
         mT9Flipper = (ViewSwitcher) fragmentView.findViewById(R.id.t9flipper);
         mT9Top = (LinearLayout) fragmentView.findViewById(R.id.t9topbar);
+
         PhoneNumberFormatter.setPhoneNumberFormattingTextWatcher(getActivity(), mDigits);
         // Check for the presence of the keypad
         View oneButton = fragmentView.findViewById(R.id.one);
@@ -598,12 +533,11 @@ public class DialpadFragment extends Fragment
     @Override
     public void onStart() {
         super.onStart();
-        configureScreenFromIntent(getActivity().getIntent());
-        setStartedFromNewIntent(false);
-
         if (isT9On()) {
             mT9Search.refresh(mT9Callback);
         }
+        configureScreenFromIntent(getActivity().getIntent());
+        setStartedFromNewIntent(false);
     }
 
     @Override
@@ -695,24 +629,6 @@ public class DialpadFragment extends Fragment
         stopWatch.lap("bes");
 
         stopWatch.stopAndLog(TAG, 50);
-
-        try {
-            if(PreferenceManager.getDefaultSharedPreferences(getActivity()).getBoolean("direct_call_pref", false)) {
-                SensorOrientationY = 0;
-                SensorProximity = 0;
-                proxChanged = false;
-                initProx = true;
-                mSensorManager = (SensorManager) getActivity().getSystemService(Context.SENSOR_SERVICE);
-                mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION),
-                    SensorManager.SENSOR_DELAY_UI);
-                mSensorManager.registerListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY),
-                    SensorManager.SENSOR_DELAY_UI);
-            }
-        } catch (Exception e) {
-            Log.w("ERROR", e.toString());
-        }
     }
 
     @Override
@@ -739,17 +655,6 @@ public class DialpadFragment extends Fragment
         // lookup the last dialed number has completed.
         mLastNumberDialed = EMPTY_NUMBER;  // Since we are going to query again, free stale number.
         SpecialCharSequenceMgr.cleanup();
-
-        try {
-            if(PreferenceManager.getDefaultSharedPreferences(getActivity()).getBoolean("direct_call_pref", false)) {
-                mSensorManager.unregisterListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION));
-                mSensorManager.unregisterListener(this,
-                    mSensorManager.getDefaultSensor(Sensor.TYPE_PROXIMITY));
-            }
-        } catch (Exception e) {
-            Log.w("ERROR", e.toString());
-        }
     }
 
     @Override
@@ -1232,8 +1137,8 @@ public class DialpadFragment extends Fragment
                         // Voicemail is unavailable maybe because Airplane mode is turned on.
                         // Check the current status and show the most appropriate error message.
                         final boolean isAirplaneModeOn =
-                                Settings.Global.getInt(getActivity().getContentResolver(),
-                                Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
+                                Settings.System.getInt(getActivity().getContentResolver(),
+                                Settings.System.AIRPLANE_MODE_ON, 0) != 0;
                         if (isAirplaneModeOn) {
                             DialogFragment dialogFragment = ErrorDialogFragment.newInstance(
                                     R.string.dialog_voicemail_airplane_mode_message);
@@ -1422,7 +1327,6 @@ public class DialpadFragment extends Fragment
                 // contains a *formatted* version of mLastNumberDialed (due to
                 // mTextWatcher) and its length may have changed.
                 mDigits.setSelection(mDigits.getText().length());
-                searchContacts();
             } else {
                 // There's no "last number dialed" or the
                 // background query is still running. There's
@@ -1720,26 +1624,6 @@ public class DialpadFragment extends Fragment
                 Log.w(TAG, "onItemClick: unexpected itemId: " + itemId);
                 break;
         }
-    }
-
-    /**
-     * Handle long clicks from mT9List and mT9ListTop
-     */
-    @Override
-    public boolean onItemLongClick(AdapterView<?> parent, View v, int position, long id) {
-        long contactId;
-        if (parent == mT9List) {
-            contactId = mT9Adapter.getItem(position).id;
-        } else if (mT9Toggle.getTag() == null) {
-            contactId = mT9AdapterTop.getItem(position).id;
-        } else {
-            return false;
-        }
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        Uri uri = Uri.withAppendedPath(Contacts.CONTENT_URI, String.valueOf(contactId));
-        intent.setData(uri);
-        startActivity(intent);
-        return true;
     }
 
     /**
